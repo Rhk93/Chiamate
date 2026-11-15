@@ -10,15 +10,26 @@ jobs:
     steps:
       - name: Scarica la repository
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      - name: Estrai lo zip del progetto
+      - name: Estrai lo zip piu' recente
         run: |
-          ZIP=$(ls *.zip | head -n 1)
-          echo "Zip trovato: $ZIP"
+          ZIP=""
+          ULTIMO=0
+          for f in *.zip; do
+            T=$(git log -1 --format=%ct -- "$f")
+            echo "Zip: $f  (caricato: $T)"
+            if [ "${T:-0}" -ge "$ULTIMO" ]; then ULTIMO=${T:-0}; ZIP="$f"; fi
+          done
+          echo "Uso lo zip: $ZIP"
           rm -rf progetto && mkdir progetto
           unzip -o -q "$ZIP" -d progetto
           DIR=$(dirname "$(find progetto -name settings.gradle | head -n 1)")
+          VER=$(grep -m1 versionName "$DIR/app/build.gradle" | sed 's/[^0-9.]//g')
+          echo "Versione: $VER"
           echo "DIR=$DIR" >> "$GITHUB_ENV"
+          echo "VER=$VER" >> "$GITHUB_ENV"
 
       - name: Installa Java 17
         uses: actions/setup-java@v5
@@ -33,10 +44,12 @@ jobs:
 
       - name: Compila l'APK
         working-directory: ${{ env.DIR }}
-        run: gradle assembleDebug --no-daemon
+        run: |
+          gradle assembleDebug --no-daemon
+          cp app/build/outputs/apk/debug/*.apk "$GITHUB_WORKSPACE/Chiamate-${VER}.apk"
 
       - name: Carica l'APK
         uses: actions/upload-artifact@v5
         with:
-          name: Chiamate-APK
-          path: ${{ env.DIR }}/app/build/outputs/apk/debug/*.apk
+          name: Chiamate-${{ env.VER }}
+          path: Chiamate-${{ env.VER }}.apk
